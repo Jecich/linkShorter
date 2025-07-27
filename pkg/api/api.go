@@ -60,13 +60,30 @@ func (api *API) getShortUrl(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	url_l = strings.TrimPrefix(url_l, "https://")
+	url_l = strings.TrimPrefix(url_l, "http://")
+	url_l = strings.TrimPrefix(url_l, "https:/")
+	url_l = strings.TrimPrefix(url_l, "http:/")
+
+	var shortCode string
+	err := db.DB.QueryRow("SELECT short_code FROM urls WHERE long_url = ? LIMIT 1", url_l).Scan(&shortCode)
+
+	if err == nil {
+		answer := r.Host + "/" + shortCode
+		w.Write([]byte(answer))
+		return
+	}
+
 	url_s := genCode()
-	_, err := db.DB.Exec("INSERT INTO urls (long_url, short_code) VALUES (?, ?)", url_l, url_s)
+	_, err = db.DB.Exec("INSERT INTO urls (long_url, short_code) VALUES (?, ?)", url_l, url_s)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+
 	answer := r.Host + "/" + url_s
 	w.Write([]byte(answer))
 }
