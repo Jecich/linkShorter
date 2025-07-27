@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net/http"
 	"shorterUrl/pkg/db"
+	"strings"
 )
 
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -17,6 +18,8 @@ type API struct {
 func New() *API {
 	api := API{router: mux.NewRouter()}
 	api.endpoints()
+
+	api.router.PathPrefix("/").Handler(http.FileServer(http.Dir("./frontend")))
 	return &api
 }
 
@@ -31,8 +34,9 @@ type ShortRes struct {
 
 func (api *API) endpoints() {
 	api.router.Use(logMiddleware)
-	api.router.HandleFunc("/{url:.+}", api.getShortUrl).Methods(http.MethodGet)
 
+	api.router.HandleFunc("/shorten/{url:.+}", api.getShortUrl).Methods(http.MethodGet)
+	api.router.HandleFunc("/{short}", api.redirectUrl).Methods(http.MethodGet)
 }
 
 func genCode() string {
@@ -63,14 +67,25 @@ func (api *API) getShortUrl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	answer := "http://" + r.Host + "/" + url_s
-	err = json.NewEncoder(w).Encode(answer)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	answer := r.Host + "/" + url_s
+	w.Write([]byte(answer))
 }
 
 func (api *API) redirectUrl(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	sCode := params["short"]
 
+	var longUrl string
+
+	err := db.DB.QueryRow("SELECT long_url FROM urls WHERE short_code = ?", sCode).Scan(&longUrl)
+
+	if err != nil {
+		http.Error(w, "URL not found", http.StatusNotFound)
+		return
+	}
+
+	if !strings.HasPrefix(longUrl, "http://") && !strings.HasPrefix(longUrl, "https://") {
+		longUrl = "http://" + longUrl
+	}
+	http.Redirect(w, r, longUrl, http.StatusMovedPermanently)
 }
